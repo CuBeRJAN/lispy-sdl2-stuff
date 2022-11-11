@@ -283,9 +283,9 @@
 				  (/ *screen-width* 2)
 				  *screen-height*)
 	   (fill-circle renderer
-		      (rect-x *ball*)
-		      (rect-y *ball*)
-		      (/ (rect-width *ball*) 0))
+		      (+ (rect-x *ball*) (/ (rect-width *ball*) 2))
+		      (+ (rect-y *ball*) (/ (rect-height *ball*) 2))
+		      (/ (rect-width *ball*) 2))
 	   (fill-rect renderer
 		      (rect-x *left-pad*)
 		      (rect-y *left-pad*)
