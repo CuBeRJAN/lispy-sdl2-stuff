@@ -5,15 +5,19 @@
 
 (ql:quickload :sdl2)
 (ql:quickload :sdl2-image)
-(ql:quickload :sdl2-ttf)
 (ql:quickload :bt-semaphore)
 
 
 (setf *random-state* (make-random-state t))
 
-(defconstant *screen-width* 960)
-(defconstant *screen-height* 960)
-(defconstant sq-size 38)
+(defconstant sq-size 46) ;; The on-screen size of a single square - window size is calculated from here
+(defconstant *grid-height* 20)
+(defconstant *grid-width* 10)
+(defconstant piece-dim 4)
+(defconstant *w* *grid-width*)
+(defconstant *h* (+ *grid-height* (1- piece-dim)))
+(defconstant *screen-width* (+ (* (+ *w* piece-dim 1) sq-size) 3))
+(defconstant *screen-height* (+ (* *grid-height* sq-size) 2))
 
 (defmacro with-window-renderer ((window renderer) &body body)
   `(sdl2:with-init (:video)
@@ -26,65 +30,82 @@
          ,@body))))
 
 (defmacro draw-rect (renderer x y width height)
+  "Draw a rectangle with SDL2."
   `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
      (sdl2:render-draw-rect ,renderer fill-rect)))
 
+(defmacro fill-rect (renderer x y width height)
+  "Draw a filled rectangle with SDL2."
+  `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
+     (sdl2:render-fill-rect ,renderer fill-rect)))
 
-(defconstant *w* 10)
-(defconstant *h* 23)
-(defconstant piece-dim 4)
-(defvar grid (make-array (list *h* *w*) :initial-element "."))
-(defvar piece)
-(defvar piece-pos)
-(defvar not-shuffeled)
-(defvar piece-index)
-(defvar exit-game nil)
-(defvar next-piece nil)
+(defvar grid (make-array (list *h* *w*) :initial-element ".")) ;; 2D game grid
+(defvar piece) ;; 2D grid of the current piece
+(defvar piece-pos) ;; position of current piece
+(defvar not-shuffled) ;; set to nil when order of pieces has been shuffled for loop
+(defvar piece-index) ;; index of piece in current list of pieces (used to re-shuffle when needed)
+(defvar exit-game nil) ;; game will exit on next loop when set to t
+(defvar next-piece nil) ;; 2D grid of the next piece
 (defstruct pos x y)
 
+;; Colors for each piece type, same as in original tetris
+(defconstant colors '(
+		      ("i" . (0 255 255))
+		      ("l" . (255 95 31))
+		      ("j" . (0 0 255))
+		      ("t" . (191 64 191))
+		      ("o" . (255 255 0))
+		      ("z" . (255 0 0))
+		      ("s" . (0 255 0))
+		      ))
+
+;; Letters are bound to colors
+;; This list is shuffled around to get random piece order
 (defvar *pieces*
   '(
-    #2A(("." "." "O" ".")
-	("." "." "O" ".")
-	("." "." "O" ".")
-	("." "." "O" "."))
+    #2A(("." "." "i" ".")
+	("." "." "i" ".")
+	("." "." "i" ".")
+	("." "." "i" "."))
     
-    #2A(("." "O" "." ".")
-	("." "O" "." ".")
-	("." "O" "O" ".")
+    #2A(("." "l" "." ".")
+	("." "l" "." ".")
+	("." "l" "l" ".")
 	("." "." "." "."))
 
-    #2A(("." "." "O" ".")
-	("." "." "O" ".")
-	("." "O" "O" ".")
+    #2A(("." "." "j" ".")
+	("." "." "j" ".")
+	("." "j" "j" ".")
 	("." "." "." "."))
 
     #2A(("." "." "." ".")
-	("." "O" "." ".")
-	("O" "O" "O" ".")
+	("." "t" "." ".")
+	("t" "t" "t" ".")
 	("." "." "." "."))
     
     #2A(("." "." "." ".")
-	("." "O" "O" ".")
-	("." "O" "O" ".")
+	("." "o" "o" ".")
+	("." "o" "o" ".")
 	("." "." "." "."))
     
-    #2A(("." "." "O" ".")
-	("." "O" "O" ".")
-	("." "O" "." ".")
+    #2A(("." "." "z" ".")
+	("." "z" "z" ".")
+	("." "z" "." ".")
 	("." "." "." "."))
     
-    #2A(("." "O" "." ".")
-	("." "O" "O" ".")
-	("." "." "O" ".")
+    #2A(("." "s" "." ".")
+	("." "s" "s" ".")
+	("." "." "s" ".")
 	("." "." "." "."))
     ))
 
 (defun random-from-list (list)
+  "Get random element from list."
   (let ((len (length list)))
     (nth (random len) list)))
 
 (defun print-grid (grid)
+  "Print a 2D array."
   (let ((width (array-dimension grid 1))
 	(height (array-dimension grid 0)))
     (loop for i from 0 below height do
@@ -94,17 +115,19 @@
 	(format t "~%")))))
 
 (defun render-piece (grid)
+  "Render current piece into supplied grid."
   (let ((pw piece-dim)
 	(ph piece-dim))
     (loop for i from 0 below ph do
       (loop for j from 0 below pw do
-	(when (string= (aref piece i j) "O")
+	(when (string/= (aref piece i j) ".")
 	  (setf (aref grid
 		      (+ i (pos-y piece-pos))
 		      (+ j (pos-x piece-pos)))
 		(aref piece i j)))))))
 
 (defun store-piece ()
+  "Permanently store current piece in the grid."
   (render-piece grid))
 
 (defun copy-array (array &key
@@ -112,6 +135,7 @@
 			   (fill-pointer (and (array-has-fill-pointer-p array)
 					      (fill-pointer array)))
 			   (adjustable (adjustable-array-p array)))
+  "Copy an array, multi-dimensional arrays supported too."
   (let ((dims (array-dimensions array)))
     (adjust-array
      (make-array dims
@@ -120,46 +144,53 @@
      dims)))
 
 (defun print-game ()
+  "Print the game into command line."
   (let ((render (copy-array grid)))
     (render-piece render)
     (print-grid render)))
 
 (defun shuffle-list (list)
+  "Shuffle a list randomly."
   (loop for i from (length list) downto 2
         do (rotatef (nth (random i) list)
                     (nth (1- i) list)))
   list)
 
 (defun predict-piece ()
+  "Return next piece."
   (if (> piece-index 5)
-      (if not-shuffeled
+      (if not-shuffled
 	  (progn
 	    (shuffle-list *pieces*)
-	    (setf not-shuffeled nil)
+	    (setf not-shuffled nil)
 	    (car *pieces*))
 	  (car *pieces*))
       (nth (+ piece-index 1) *pieces*)))
 
 (defun random-piece ()
+  "Get the next piece."
   (incf piece-index)
   (when (> piece-index 6)
     (setq piece-index 0))
-  (setf not-shuffeled t)
+  (setf not-shuffled t)
   (setf piece (nth piece-index *pieces*)))
 
 (defun reset-pos ()
+  "Reset piece position."
   (setf (pos-x piece-pos) (- (/ *w* 2) (/ piece-dim 2)))
   (setf (pos-y piece-pos) 0))
 
 (defun init-game ()
+  "Initialize game."
   (setf piece (random-from-list *pieces*))
   (setf piece-pos (make-pos :x (- (/ *w* 2) (/ piece-dim 2)) :y 0))
   (shuffle-list *pieces*)
-  (setf not-shuffeled t)
+  (setf not-shuffled t)
   (setq piece-index 0)
   (setf piece (car *pieces*)))
 
 (defun move-piece-skip ()
+  "Move piece all the way to the bottom."
   (loop while (not (has-landed)) do
     (incf (pos-y piece-pos)))
   (store-piece)
@@ -167,6 +198,7 @@
   (reset-pos))
 
 (defun move-piece ()
+  "Move piece once."
   (if (not (has-landed))
       (incf (pos-y piece-pos))
       (progn
@@ -175,6 +207,7 @@
 	(reset-pos))))
 
 (defun transpose-matrix (matrix)
+  "Return transposed matrix."
   (let ((new-matrix (make-array (array-dimensions matrix)))
 	(height (array-dimension matrix 0))
 	(width  (array-dimension matrix 1)))
@@ -184,6 +217,7 @@
     new-matrix))
 
 (defun reverse-rows (matrix)
+  "In-place reverse rows in matrix."
   (let* ((height (array-dimension matrix 0))
 	 (width  (array-dimension matrix 1))
 	 (tmp nil)
@@ -201,6 +235,7 @@
 	  (decf end))))))
 
 (defun is-valid-pos (y x)
+  "Check if position is not occupied or outside of game grid."
   (when (and
 	 (>= x 0)
 	 (< x *w*)
@@ -210,29 +245,34 @@
 	     ".")))
 
 (defun has-landed ()
+  "Check if piece has landed."
   (check-collision :down t))
 
 (defun clear-row (n)
+  "Clear supplied row."
   (loop for i from n above 0 do
     (loop for j from 0 below (array-dimension grid 1) do
       (setf (aref grid i j) (aref grid (- i 1) j)))))
 
 (defun check-rows ()
+  "Find filled rows and clear them."
   (let ((do-clear nil))
     (loop for i from 0 below (array-dimension grid 0) do
       (loop for j from 0 below (array-dimension grid 1) do
 	(progn
-	  (when (string/= (aref grid i j) "O")
+	  (when (string= (aref grid i j) ".")
 	    (return))
 	  (when (= j (- (array-dimension grid 1) 1))
 	    (clear-row i)))))))
 
 (defun check-loss ()
+  "Check if the player has lost."
   (loop for i from 0 below (array-dimension grid 1) do
-    (when (string= (aref grid 0 i) "O")
+    (when (string/= (aref grid 2 i) ".")
       (setf exit-game t))))
 
 (defun check-collision (&key up right left down (piece piece))
+  "Check collision in specified direction for specified piece."
   (let ((mx (cond (right 1)
 		  (left -1)
 		  (t 0)))
@@ -243,66 +283,78 @@
     (loop for i from 0 below piece-dim do
       (loop for j from 0 below piece-dim do
 	(when (and
-	       (string= (aref piece i j) "O")
+	       (string/= (aref piece i j) ".")
 	       (not (is-valid-pos (+ i (pos-y piece-pos) my)
 				  (+ j (pos-x piece-pos) mx))))
 	  (setq landed t))))
     landed))
 
 (defun rotate-piece ()
+  "Rotate the current piece."
   (let ((new-piece nil))
     (setf new-piece (transpose-matrix piece))
     (reverse-rows new-piece)
-    (when (not (check-collision :piece new-piece))
+    (when (not (check-collision :piece new-piece)) ;; check rotation collision
       (setf piece new-piece))))
 
 (defun move (&key up down left right)
+  "Move the current piece in specified direction."
   (when (not (check-collision :up up :down down :left left :right right))
     (cond (right (incf (pos-x piece-pos)))
 	  (left  (decf (pos-x piece-pos))))
     (cond (down (incf (pos-y piece-pos)))
 	  (up   (decf (pos-y piece-pos))))))
 
+(defun set-color-by-piece (renderer letter)
+  "Set renderer color according to specific grid entry."
+  (let* ((color (assoc letter colors :test #'string=))
+	 (r (nth 1 color))
+	 (g (nth 2 color))
+	 (b (nth 3 color)))
+    (sdl2:set-render-draw-color renderer r g b 255)))
+
 (defun render-game-grid (renderer)
+  "Render the game grid into the SDL2 window."
   (let* ((render-grid (copy-array grid))
-	 (h (* sq-size (array-dimension grid 0)))
-	 (w (* sq-size (array-dimension grid 1)))
-	 (bxf (+ w sq-size))
-	 (bxl (+ w (* sq-size (+ piece-dim 1))))
-	 (byl (* sq-size piece-dim)))
-    (sdl2:render-draw-line renderer 0 0 w 0)
+	 (h (+ (* sq-size (- (array-dimension grid 0) (- piece-dim 1))) 1))
+	 (w (+ (* sq-size (array-dimension grid 1)) 1))
+	 (bxf (+ w sq-size -1))
+	 (bxl (+ w (* sq-size (+ piece-dim 1)) 1))
+	 (byl (+ (* sq-size piece-dim) 1)))
+    (sdl2:render-draw-line renderer 0 0 w 0) ;; Render game grid outline
     (sdl2:render-draw-line renderer 0 0 0 h)
     (sdl2:render-draw-line renderer 0 h w h)
     (sdl2:render-draw-line renderer w 0 w h)
-    (sdl2:render-draw-line renderer bxf 0   bxl 0  )
+    (sdl2:render-draw-line renderer bxf 0   bxl 0  ) ;; Next piece box outline
     (sdl2:render-draw-line renderer bxf 0   bxf byl)
     (sdl2:render-draw-line renderer bxf byl bxl byl)
     (sdl2:render-draw-line renderer bxl 0   bxl byl)
     (render-piece render-grid)
-    (loop for i from 0 below (array-dimension piece 0) do
+    (loop for i from 0 below (array-dimension piece 0) do ;; Next piece
       (loop for j from 0 below (array-dimension piece 1) do
-	(when (string= (aref next-piece i j) "O")
-	  (draw-rect renderer (+ bxf (* j sq-size)) (* i sq-size) sq-size sq-size))))
-    (loop for i from 0 below (array-dimension grid 0) do
+	(when (string/= (aref next-piece i j) ".")
+	  (set-color-by-piece renderer (aref next-piece i j))
+	  (fill-rect renderer (+ bxf 1 (* j sq-size)) (+ (* i sq-size) 1) sq-size sq-size))))
+    (loop for i from (- piece-dim 1) below (array-dimension grid 0) do ;; Actual game grid
       (loop for j from 0 below (array-dimension grid 1) do
-	(when (string= (aref render-grid i j) "O")
-	  (draw-rect renderer (* j sq-size) (* i sq-size) sq-size sq-size))))))
+	(when (string/= (aref render-grid i j) ".")
+	  (set-color-by-piece renderer (aref render-grid i j))
+	  (fill-rect renderer (+ (* j sq-size) 1) (+ (* (- i (- piece-dim 1)) sq-size) 1) sq-size sq-size))))))
 
 
 (init-game)
 
 (bt:make-thread (lambda ()
-		  (let ((start nil) (end nil))
+		  (let ((start nil)
+			(end nil))
 		    (loop while t do
 		      (setq start (get-internal-real-time))
 		      (move-piece)
 		      (check-rows)
 		      (check-loss)
 		      (setq end (get-internal-real-time))
-		      (write (- end start))
-		      (terpri)
 		      (setf next-piece (predict-piece))
-		      (sleep (- 0.2 (/ (- end start) 1000000))))))
+		      (sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
 		:name "thread")
 
 (with-window-renderer
