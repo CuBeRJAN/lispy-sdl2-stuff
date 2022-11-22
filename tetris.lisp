@@ -1,4 +1,34 @@
+(let ((quicklisp-init (merge-pathnames "quicklisp/setup.lisp"
+                                       (user-homedir-pathname))))
+  (when (probe-file quicklisp-init)
+    (load quicklisp-init)))
+
+(ql:quickload :sdl2)
+(ql:quickload :sdl2-image)
+(ql:quickload :sdl2-ttf)
+(ql:quickload :bt-semaphore)
+
+
 (setf *random-state* (make-random-state t))
+
+(defconstant *screen-width* 960)
+(defconstant *screen-height* 960)
+(defconstant sq-size 38)
+
+(defmacro with-window-renderer ((window renderer) &body body)
+  `(sdl2:with-init (:video)
+     (sdl2:with-window (,window
+                        :title "Common Lisp SDL2 Tetris"
+                        :w *screen-width*
+                        :h *screen-height*
+                        :flags '(:shown))
+       (let ((,renderer (sdl2:create-renderer window -1 '(:ACCELERATED :PRESENTVSYNC))))
+         ,@body))))
+
+(defmacro draw-rect (renderer x y width height)
+  `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
+     (sdl2:render-draw-rect ,renderer fill-rect)))
+
 
 (defconstant *w* 10)
 (defconstant *h* 23)
@@ -131,7 +161,7 @@
 
 (defun move-piece-skip ()
   (loop while (not (has-landed)) do
-	(incf (pos-y piece-pos)))
+    (incf (pos-y piece-pos)))
   (store-piece)
   (random-piece)
   (reset-pos))
@@ -139,10 +169,10 @@
 (defun move-piece ()
   (if (not (has-landed))
       (incf (pos-y piece-pos))
-    (progn
-      (store-piece)
-      (random-piece)
-      (reset-pos))))
+      (progn
+	(store-piece)
+	(random-piece)
+	(reset-pos))))
 
 (defun transpose-matrix (matrix)
   (let ((new-matrix (make-array (array-dimensions matrix)))
@@ -160,19 +190,15 @@
 	 (start 0)
 	 (end (- width 1)))
     (loop for i from 0 below height do
-	  (progn
-	    (setq start 0)
-	    (setq end (- width 1))
-	    (loop while (< start end) do
-		  (setf tmp (aref matrix i start))
-		  (setf (aref matrix i start) (aref matrix i end))
-		  (setf (aref matrix i end) tmp)
-		  (incf start)
-		  (decf end))))))
-
-(defun rotate-piece ()
-  (setf piece (transpose-matrix piece))
-  (reverse-rows piece))
+      (progn
+	(setq start 0)
+	(setq end (- width 1))
+	(loop while (< start end) do
+	  (setf tmp (aref matrix i start))
+	  (setf (aref matrix i start) (aref matrix i end))
+	  (setf (aref matrix i end) tmp)
+	  (incf start)
+	  (decf end))))))
 
 (defun is-valid-pos (y x)
   (when (and
@@ -206,7 +232,7 @@
     (when (string= (aref grid 0 i) "O")
       (setf exit-game t))))
 
-(defun check-collision (&key up right left down)
+(defun check-collision (&key up right left down (piece piece))
   (let ((mx (cond (right 1)
 		  (left -1)
 		  (t 0)))
@@ -215,13 +241,20 @@
 		  (t 0)))
 	(landed nil))
     (loop for i from 0 below piece-dim do
-	  (loop for j from 0 below piece-dim do
-		(when (and
-		       (string= (aref piece i j) "O")
-		       (not (is-valid-pos (+ i (pos-y piece-pos) my)
-					  (+ j (pos-x piece-pos) mx))))
-		  (setq landed t))))
+      (loop for j from 0 below piece-dim do
+	(when (and
+	       (string= (aref piece i j) "O")
+	       (not (is-valid-pos (+ i (pos-y piece-pos) my)
+				  (+ j (pos-x piece-pos) mx))))
+	  (setq landed t))))
     landed))
+
+(defun rotate-piece ()
+  (let ((new-piece nil))
+    (setf new-piece (transpose-matrix piece))
+    (reverse-rows new-piece)
+    (when (not (check-collision :piece new-piece))
+      (setf piece new-piece))))
 
 (defun move (&key up down left right)
   (when (not (check-collision :up up :down down :left left :right right))
@@ -229,21 +262,6 @@
 	  (left  (decf (pos-x piece-pos))))
     (cond (down (incf (pos-y piece-pos)))
 	  (up   (decf (pos-y piece-pos))))))
-
-(let ((quicklisp-init (merge-pathnames "quicklisp/setup.lisp"
-                                       (user-homedir-pathname))))
-  (when (probe-file quicklisp-init)
-    (load quicklisp-init)))
-
-
-(ql:quickload :sdl2)
-(ql:quickload :sdl2-image)
-(ql:quickload :sdl2-ttf)
-(ql:quickload :bt-semaphore)
-(load "./sdl-fn.lisp")
-
-
-(defconstant sq-size 38)
 
 (defun render-game-grid (renderer)
   (let* ((render-grid (copy-array grid))
@@ -270,24 +288,17 @@
 	(when (string= (aref render-grid i j) "O")
 	  (draw-rect renderer (* j sq-size) (* i sq-size) sq-size sq-size))))))
 
-(defconstant *screen-width* 960)
-(defconstant *screen-height* 960)
-
-(defstruct rect x y width height)
-(defstruct circle x y radius filled)
 
 (init-game)
 
-
 (bt:make-thread (lambda ()
 		  (loop while t do
-			(move-piece)
-			(check-rows)
-			(check-loss)
-			(setf next-piece (predict-piece))
-			(sleep 0.2)))
+		    (move-piece)
+		    (check-rows)
+		    (check-loss)
+		    (setf next-piece (predict-piece))
+		    (sleep 0.2)))
 		:name "thread")
-
 
 (with-window-renderer
     (window renderer)
