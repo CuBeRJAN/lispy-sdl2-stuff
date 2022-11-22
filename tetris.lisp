@@ -342,35 +342,36 @@
 	  (fill-rect renderer (+ (* j sq-size) 1) (+ (* (- i (- piece-dim 1)) sq-size) 1) sq-size sq-size))))))
 
 
-(init-game)
+(defun run ()
+  (init-game)
 
-(bt:make-thread (lambda ()
-		  (let ((start nil)
-			(end nil))
-		    (loop while t do
-		      (setq start (get-internal-real-time))
-		      (move-piece)
-		      (check-rows)
-		      (check-loss)
-		      (setq end (get-internal-real-time))
-		      (setf next-piece (predict-piece))
-		      (sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
-		:name "thread")
+  (bt:make-thread (lambda ()
+		    (let ((start nil)
+			  (end nil))
+		      (loop while t do
+			    (setq start (get-internal-real-time))
+			    (move-piece)
+			    (check-rows)
+			    (check-loss)
+			    (setq end (get-internal-real-time))
+			    (setf next-piece (predict-piece))
+			    (sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
+		  :name "thread")
 
-(with-window-renderer
-    (window renderer)
-  (sdl2-image:init '(:png))
-  (let ()
-    (sdl2:with-event-loop
-	(:method :poll)
+  (with-window-renderer
+   (window renderer)
+   (sdl2-image:init '(:png))
+   (let ()
+     (sdl2:with-event-loop
+      (:method :poll)
       (:quit () t)
       (:keydown (:keysym keysym)
 		(case (sdl2:scancode keysym)
-		  (:scancode-right (move :right t))
-		  (:scancode-left (move :left t))
-		  (:scancode-up (rotate-piece))
-		  (:scancode-down (move-piece))
-		  (:scancode-space (move-piece-skip))))
+		      (:scancode-right (move :right t))
+		      (:scancode-left (move :left t))
+		      (:scancode-up (rotate-piece))
+		      (:scancode-down (move-piece))
+		      (:scancode-space (move-piece-skip))))
       (:idle ()
 	     (when exit-game
 	       (format t "~%Game over!~%")
@@ -380,4 +381,7 @@
 	     (sdl2:set-render-draw-color renderer 255 255 255 0)
 	     (render-game-grid renderer)
 	     (sdl2:render-present renderer))))
-  (sdl2-image:quit))
+   (sdl2-image:quit)))
+
+;;(sb-ext:save-lisp-and-die #p"a.out" :toplevel #'run :executable t :compression 9)
+(run)
