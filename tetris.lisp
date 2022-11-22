@@ -39,7 +39,7 @@
 (defvar not-shuffeled)
 (defvar piece-index)
 (defvar exit-game nil)
-(defvar next-piece)
+(defvar next-piece nil)
 (defstruct pos x y)
 
 (defvar *pieces*
@@ -292,12 +292,17 @@
 (init-game)
 
 (bt:make-thread (lambda ()
-		  (loop while t do
-		    (move-piece)
-		    (check-rows)
-		    (check-loss)
-		    (setf next-piece (predict-piece))
-		    (sleep 0.2)))
+		  (let ((start nil) (end nil))
+		    (loop while t do
+		      (setq start (get-internal-real-time))
+		      (move-piece)
+		      (check-rows)
+		      (check-loss)
+		      (setq end (get-internal-real-time))
+		      (write (- end start))
+		      (terpri)
+		      (setf next-piece (predict-piece))
+		      (sleep (- 0.2 (/ (- end start) 1000000))))))
 		:name "thread")
 
 (with-window-renderer
