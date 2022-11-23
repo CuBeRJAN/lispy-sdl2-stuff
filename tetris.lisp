@@ -13,7 +13,7 @@
 (defconstant sq-size 46) ;; The on-screen size of a single square - window size is calculated from here
 (defconstant *grid-height* 20)
 (defconstant *grid-width* 10)
-(defconstant piece-dim 4)
+(defconstant piece-dim 5)
 (defconstant *w* *grid-width*)
 (defconstant *h* (+ *grid-height* (1- piece-dim)))
 (defconstant *screen-width* (+ (* (+ *w* piece-dim 1) sq-size) 3))
@@ -63,37 +63,43 @@
 ;; This list is shuffled around to get random piece order
 (defvar *pieces*
   '(
-    #2A(("." "." "i" ".")
-	("." "." "i" ".")
-	("." "." "i" ".")
-	("." "." "i" "."))
+    #2A(("." "." "i" "." ".")
+	("." "." "i" "." ".")
+	("." "." "i" "." ".")
+	("." "." "i" "." ".")
+	("." "." "." "." "."))
     
-    #2A(("." "l" "." ".")
-	("." "l" "." ".")
-	("." "l" "l" ".")
-	("." "." "." "."))
+    #2A(("." "." "." "." ".")
+	("." "." "l" "." ".")
+	("." "." "l" "." ".")
+	("." "." "l" "l" ".")
+	("." "." "." "." "."))
 
-    #2A(("." "." "j" ".")
-	("." "." "j" ".")
-	("." "j" "j" ".")
-	("." "." "." "."))
+    #2A(("." "." "." "." ".")
+	("." "." "j" "." ".")
+	("." "." "j" "." ".")
+	("." "j" "j" "." ".")
+	("." "." "." "." "."))
 
-    #2A(("." "." "." ".")
-	("." "t" "." ".")
-	("t" "t" "t" ".")
-	("." "." "." "."))
+    #2A(("." "." "." "." ".")
+	("." "." "t" "." ".")
+	("." "t" "t" "t" ".")
+	("." "." "." "." ".")
+	("." "." "." "." "."))
     
     #2A(("." "." "." ".")
 	("." "o" "o" ".")
 	("." "o" "o" ".")
 	("." "." "." "."))
     
-    #2A(("." "." "z" ".")
+    #2A(("." "." "." ".")
+	("." "." "z" ".")
 	("." "z" "z" ".")
 	("." "z" "." ".")
 	("." "." "." "."))
     
-    #2A(("." "s" "." ".")
+    #2A(("." "." "." ".")
+	("." "s" "." ".")
 	("." "s" "s" ".")
 	("." "." "s" ".")
 	("." "." "." "."))
@@ -116,8 +122,8 @@
 
 (defun render-piece (grid)
   "Render current piece into supplied grid."
-  (let ((pw piece-dim)
-	(ph piece-dim))
+  (let ((pw (array-dimension piece 1))
+	(ph (array-dimension piece 0)))
     (loop for i from 0 below ph do
       (loop for j from 0 below pw do
 	(when (string/= (aref piece i j) ".")
@@ -177,13 +183,13 @@
 
 (defun reset-pos ()
   "Reset piece position."
-  (setf (pos-x piece-pos) (- (/ *w* 2) (/ piece-dim 2)))
+  (setf (pos-x piece-pos) (- (/ *w* 2) (floor piece-dim 2)))
   (setf (pos-y piece-pos) 0))
 
 (defun init-game ()
   "Initialize game."
   (setf piece (random-from-list *pieces*))
-  (setf piece-pos (make-pos :x (- (/ *w* 2) (/ piece-dim 2)) :y 0))
+  (setf piece-pos (make-pos :x (- (/ *w* 2) (floor piece-dim 2)) :y 0))
   (shuffle-list *pieces*)
   (setf not-shuffled t)
   (setq piece-index 0)
@@ -208,12 +214,16 @@
 
 (defun transpose-matrix (matrix)
   "Return transposed matrix."
-  (let ((new-matrix (make-array (array-dimensions matrix)))
+  (let* ((new-matrix (make-array (list (array-dimension matrix 1)
+				      (array-dimension matrix 0))))
 	(height (array-dimension matrix 0))
-	(width  (array-dimension matrix 1)))
-    (loop for i from 0 below height do
-      (loop for j from 0 below width do
-	(setf (aref new-matrix i j) (aref matrix j i))))
+	 (width  (array-dimension matrix 1))
+	 (new-height width)
+	 (new-width height))
+    (loop for i from 0 below new-height do
+      (loop for j from 0 below new-width do
+	(setf (aref new-matrix i j)
+	      (aref matrix j i))))
     new-matrix))
 
 (defun reverse-rows (matrix)
@@ -232,7 +242,7 @@
 	  (setf (aref matrix i start) (aref matrix i end))
 	  (setf (aref matrix i end) tmp)
 	  (incf start)
-	  (decf end))))))
+		  (decf end))))))
 
 (defun is-valid-pos (y x)
   "Check if position is not occupied or outside of game grid."
@@ -251,25 +261,25 @@
 (defun clear-row (n)
   "Clear supplied row."
   (loop for i from n above 0 do
-    (loop for j from 0 below (array-dimension grid 1) do
-      (setf (aref grid i j) (aref grid (- i 1) j)))))
+	(loop for j from 0 below (array-dimension grid 1) do
+	      (setf (aref grid i j) (aref grid (- i 1) j)))))
 
 (defun check-rows ()
   "Find filled rows and clear them."
   (let ((do-clear nil))
     (loop for i from 0 below (array-dimension grid 0) do
-      (loop for j from 0 below (array-dimension grid 1) do
-	(progn
-	  (when (string= (aref grid i j) ".")
-	    (return))
-	  (when (= j (- (array-dimension grid 1) 1))
-	    (clear-row i)))))))
+	  (loop for j from 0 below (array-dimension grid 1) do
+		(progn
+		  (when (string= (aref grid i j) ".")
+		    (return))
+		  (when (= j (- (array-dimension grid 1) 1))
+		    (clear-row i)))))))
 
 (defun check-loss ()
   "Check if the player has lost."
   (loop for i from 0 below (array-dimension grid 1) do
-    (when (string/= (aref grid 2 i) ".")
-      (setf exit-game t))))
+	(when (string/= (aref grid 2 i) ".")
+	  (setf exit-game t))))
 
 (defun check-collision (&key up right left down (piece piece))
   "Check collision in specified direction for specified piece."
@@ -280,13 +290,13 @@
 		  (up -1)
 		  (t 0)))
 	(landed nil))
-    (loop for i from 0 below piece-dim do
-      (loop for j from 0 below piece-dim do
-	(when (and
-	       (string/= (aref piece i j) ".")
-	       (not (is-valid-pos (+ i (pos-y piece-pos) my)
-				  (+ j (pos-x piece-pos) mx))))
-	  (setq landed t))))
+    (loop for i from 0 below (array-dimension piece 0) do
+	  (loop for j from 0 below (array-dimension piece 1) do
+		(when (and
+		       (string/= (aref piece i j) ".")
+		       (not (is-valid-pos (+ i (pos-y piece-pos) my)
+					  (+ j (pos-x piece-pos) mx))))
+		  (setq landed t))))
     landed))
 
 (defun rotate-piece ()
@@ -330,8 +340,8 @@
     (sdl2:render-draw-line renderer bxf byl bxl byl)
     (sdl2:render-draw-line renderer bxl 0   bxl byl)
     (render-piece render-grid)
-    (loop for i from 0 below (array-dimension piece 0) do ;; Next piece
-      (loop for j from 0 below (array-dimension piece 1) do
+    (loop for i from 0 below (array-dimension next-piece 0) do ;; Next piece
+      (loop for j from 0 below (array-dimension next-piece 1) do
 	(when (string/= (aref next-piece i j) ".")
 	  (set-color-by-piece renderer (aref next-piece i j))
 	  (fill-rect renderer (+ bxf 1 (* j sq-size)) (+ (* i sq-size) 1) sq-size sq-size))))
@@ -343,6 +353,7 @@
 
 
 (defun run ()
+  (setf *random-state* (make-random-state t))
   (init-game)
 
   (bt:make-thread (lambda ()
@@ -383,5 +394,5 @@
 	     (sdl2:render-present renderer))))
    (sdl2-image:quit)))
 
-;;(sb-ext:save-lisp-and-die #p"a.out" :toplevel #'run :executable t :compression 9)
+;;(sb-ext:save-lisp-and-die #p"tetris" :toplevel #'run :executable t :compression 9)
 (run)
