@@ -215,8 +215,8 @@
 (defun transpose-matrix (matrix)
   "Return transposed matrix."
   (let* ((new-matrix (make-array (list (array-dimension matrix 1)
-				      (array-dimension matrix 0))))
-	(height (array-dimension matrix 0))
+				       (array-dimension matrix 0))))
+	 (height (array-dimension matrix 0))
 	 (width  (array-dimension matrix 1))
 	 (new-height width)
 	 (new-width height))
@@ -242,7 +242,7 @@
 	  (setf (aref matrix i start) (aref matrix i end))
 	  (setf (aref matrix i end) tmp)
 	  (incf start)
-		  (decf end))))))
+	  (decf end))))))
 
 (defun is-valid-pos (y x)
   "Check if position is not occupied or outside of game grid."
@@ -261,25 +261,25 @@
 (defun clear-row (n)
   "Clear supplied row."
   (loop for i from n above 0 do
-	(loop for j from 0 below (array-dimension grid 1) do
-	      (setf (aref grid i j) (aref grid (- i 1) j)))))
+    (loop for j from 0 below (array-dimension grid 1) do
+      (setf (aref grid i j) (aref grid (- i 1) j)))))
 
 (defun check-rows ()
   "Find filled rows and clear them."
   (let ((do-clear nil))
     (loop for i from 0 below (array-dimension grid 0) do
-	  (loop for j from 0 below (array-dimension grid 1) do
-		(progn
-		  (when (string= (aref grid i j) ".")
-		    (return))
-		  (when (= j (- (array-dimension grid 1) 1))
-		    (clear-row i)))))))
+      (loop for j from 0 below (array-dimension grid 1) do
+	(progn
+	  (when (string= (aref grid i j) ".")
+	    (return))
+	  (when (= j (- (array-dimension grid 1) 1))
+	    (clear-row i)))))))
 
 (defun check-loss ()
   "Check if the player has lost."
   (loop for i from 0 below (array-dimension grid 1) do
-	(when (string/= (aref grid 2 i) ".")
-	  (setf exit-game t))))
+    (when (string/= (aref grid 2 i) ".")
+      (setf exit-game t))))
 
 (defun check-collision (&key up right left down (piece piece))
   "Check collision in specified direction for specified piece."
@@ -291,12 +291,12 @@
 		  (t 0)))
 	(landed nil))
     (loop for i from 0 below (array-dimension piece 0) do
-	  (loop for j from 0 below (array-dimension piece 1) do
-		(when (and
-		       (string/= (aref piece i j) ".")
-		       (not (is-valid-pos (+ i (pos-y piece-pos) my)
-					  (+ j (pos-x piece-pos) mx))))
-		  (setq landed t))))
+      (loop for j from 0 below (array-dimension piece 1) do
+	(when (and
+	       (string/= (aref piece i j) ".")
+	       (not (is-valid-pos (+ i (pos-y piece-pos) my)
+				  (+ j (pos-x piece-pos) mx))))
+	  (setq landed t))))
     landed))
 
 (defun rotate-piece ()
@@ -341,15 +341,15 @@
     (sdl2:render-draw-line renderer bxl 0   bxl byl)
     (render-piece render-grid)
     (loop for i from 0 below (array-dimension next-piece 0) do ;; Next piece
-      (loop for j from 0 below (array-dimension next-piece 1) do
-	(when (string/= (aref next-piece i j) ".")
-	  (set-color-by-piece renderer (aref next-piece i j))
-	  (fill-rect renderer (+ bxf 1 (* j sq-size)) (+ (* i sq-size) 1) sq-size sq-size))))
+							       (loop for j from 0 below (array-dimension next-piece 1) do
+								 (when (string/= (aref next-piece i j) ".")
+								   (set-color-by-piece renderer (aref next-piece i j))
+								   (fill-rect renderer (+ bxf 1 (* j sq-size)) (+ (* i sq-size) 1) sq-size sq-size))))
     (loop for i from (- piece-dim 1) below (array-dimension grid 0) do ;; Actual game grid
-      (loop for j from 0 below (array-dimension grid 1) do
-	(when (string/= (aref render-grid i j) ".")
-	  (set-color-by-piece renderer (aref render-grid i j))
-	  (fill-rect renderer (+ (* j sq-size) 1) (+ (* (- i (- piece-dim 1)) sq-size) 1) sq-size sq-size))))))
+								       (loop for j from 0 below (array-dimension grid 1) do
+									 (when (string/= (aref render-grid i j) ".")
+									   (set-color-by-piece renderer (aref render-grid i j))
+									   (fill-rect renderer (+ (* j sq-size) 1) (+ (* (- i (- piece-dim 1)) sq-size) 1) sq-size sq-size))))))
 
 
 (defun run ()
@@ -360,39 +360,39 @@
 		    (let ((start nil)
 			  (end nil))
 		      (loop while t do
-			    (setq start (get-internal-real-time))
-			    (move-piece)
-			    (check-rows)
-			    (check-loss)
-			    (setq end (get-internal-real-time))
-			    (setf next-piece (predict-piece))
-			    (sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
+			(setq start (get-internal-real-time))
+			(move-piece)
+			(check-rows)
+			(check-loss)
+			(setq end (get-internal-real-time))
+			(setf next-piece (predict-piece))
+			(sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
 		  :name "thread")
 
   (with-window-renderer
-   (window renderer)
-   (sdl2-image:init '(:png))
-   (let ()
-     (sdl2:with-event-loop
-      (:method :poll)
-      (:quit () t)
-      (:keydown (:keysym keysym)
-		(case (sdl2:scancode keysym)
-		      (:scancode-right (move :right t))
-		      (:scancode-left (move :left t))
-		      (:scancode-up (rotate-piece))
-		      (:scancode-down (move-piece))
-		      (:scancode-space (move-piece-skip))))
-      (:idle ()
-	     (when exit-game
-	       (format t "~%Game over!~%")
-	       (sdl2:push-quit-event))
-	     (sdl2:set-render-draw-color renderer 0 0 0 255)
-	     (sdl2:render-clear renderer)
-	     (sdl2:set-render-draw-color renderer 255 255 255 0)
-	     (render-game-grid renderer)
-	     (sdl2:render-present renderer))))
-   (sdl2-image:quit)))
+      (window renderer)
+    (sdl2-image:init '(:png))
+    (let ()
+      (sdl2:with-event-loop
+	  (:method :poll)
+	(:quit () t)
+	(:keydown (:keysym keysym)
+		  (case (sdl2:scancode keysym)
+		    (:scancode-right (move :right t))
+		    (:scancode-left (move :left t))
+		    (:scancode-up (rotate-piece))
+		    (:scancode-down (move-piece))
+		    (:scancode-space (move-piece-skip))))
+	(:idle ()
+	       (when exit-game
+		 (format t "~%Game over!~%")
+		 (sdl2:push-quit-event))
+	       (sdl2:set-render-draw-color renderer 0 0 0 255)
+	       (sdl2:render-clear renderer)
+	       (sdl2:set-render-draw-color renderer 255 255 255 0)
+	       (render-game-grid renderer)
+	       (sdl2:render-present renderer))))
+    (sdl2-image:quit)))
 
 ;;(sb-ext:save-lisp-and-die #p"tetris" :toplevel #'run :executable t :compression 9)
 (run)
