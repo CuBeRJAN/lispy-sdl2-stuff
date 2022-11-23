@@ -6,11 +6,12 @@
 (ql:quickload :sdl2)
 (ql:quickload :sdl2-image)
 (ql:quickload :bt-semaphore)
+(ql:quickload :sdl2-ttf)
 
 
 (setf *random-state* (make-random-state t))
 
-(defconstant sq-size 46) ;; The on-screen size of a single square - window size is calculated from here
+(defconstant sq-size 46) ;; The on-screen size of a single square
 (defconstant *grid-height* 20)
 (defconstant *grid-width* 10)
 (defconstant piece-dim 5)
@@ -18,6 +19,37 @@
 (defconstant *h* (+ *grid-height* (1- piece-dim)))
 (defconstant *screen-width* (+ (* (+ *w* piece-dim 1) sq-size) 3))
 (defconstant *screen-height* (+ (* *grid-height* sq-size) 2))
+
+(defvar sleep-time 0.2)
+(defvar *score* 0)
+(defparameter *font* nil)
+
+(defclass tex ()
+  ((renderer
+    :initarg :renderer
+    :initform (error "Must supply a renderer"))
+   (width
+    :accessor tex-width
+    :initform 0 )
+   (height
+    :accessor tex-height
+    :initform 0)
+   (texture
+    :accessor tex-texture
+    :initform nil)))
+
+(defun free-tex (tex)
+  (with-slots (texture) tex
+    (sdl2:destroy-texture texture)))
+
+(defun load-texture-from-text (renderer text)
+  (let ((tex (make-instance 'tex :renderer renderer)))
+    (with-slots (renderer texture  width height) tex
+      (let ((surface (sdl2-ttf:render-text-solid *font* text 255 255 255 0)))
+        (setf width (sdl2:surface-width surface))
+        (setf height (sdl2:surface-height surface))
+        (setf texture (sdl2:create-texture-from-surface renderer surface))))
+    tex))
 
 (defmacro with-window-renderer ((window renderer) &body body)
   `(sdl2:with-init (:video)
@@ -37,13 +69,15 @@
 (defmacro fill-rect (renderer x y width height)
   "Draw a filled rectangle with SDL2."
   `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
-     (sdl2:render-fill-rect ,renderer fill-rect)))
+     (sdl2:render-fill-rect ,renderer fill-rect)
+     (sdl2:set-render-draw-color renderer 200 200 200 255)
+     (sdl2:render-draw-rect ,renderer fill-rect))) ;; outline
 
 (defvar grid (make-array (list *h* *w*) :initial-element ".")) ;; 2D game grid
 (defvar piece) ;; 2D grid of the current piece
 (defvar piece-pos) ;; position of current piece
 (defvar not-shuffled) ;; set to nil when order of pieces has been shuffled for loop
-(defvar piece-index) ;; index of piece in current list of pieces (used to re-shuffle when needed)
+(defvar piece-index) ;; index of piece in current list of pieces
 (defvar exit-game nil) ;; game will exit on next loop when set to t
 (defvar next-piece nil) ;; 2D grid of the next piece
 (defstruct pos x y)
@@ -260,20 +294,27 @@
 
 (defun clear-row (n)
   "Clear supplied row."
+  (decf sleep-time 0.003)
   (loop for i from n above 0 do
     (loop for j from 0 below (array-dimension grid 1) do
       (setf (aref grid i j) (aref grid (- i 1) j)))))
 
 (defun check-rows ()
   "Find filled rows and clear them."
-  (let ((do-clear nil))
+  (let ((do-clear nil) (cleared 0))
     (loop for i from 0 below (array-dimension grid 0) do
       (loop for j from 0 below (array-dimension grid 1) do
 	(progn
 	  (when (string= (aref grid i j) ".")
 	    (return))
 	  (when (= j (- (array-dimension grid 1) 1))
-	    (clear-row i)))))))
+	    (clear-row i)
+	    (incf cleared)))))
+    (case cleared
+      (1 (incf *score* 40))
+      (2 (incf *score* 100))
+      (3 (incf *score* 300))
+      (4 (incf *score* 1200)))))
 
 (defun check-loss ()
   "Check if the player has lost."
@@ -340,17 +381,38 @@
     (sdl2:render-draw-line renderer bxf byl bxl byl)
     (sdl2:render-draw-line renderer bxl 0   bxl byl)
     (render-piece render-grid)
-    (loop for i from 0 below (array-dimension next-piece 0) do ;; Next piece
-							       (loop for j from 0 below (array-dimension next-piece 1) do
-								 (when (string/= (aref next-piece i j) ".")
-								   (set-color-by-piece renderer (aref next-piece i j))
-								   (fill-rect renderer (+ bxf 1 (* j sq-size)) (+ (* i sq-size) 1) sq-size sq-size))))
-    (loop for i from (- piece-dim 1) below (array-dimension grid 0) do ;; Actual game grid
-								       (loop for j from 0 below (array-dimension grid 1) do
-									 (when (string/= (aref render-grid i j) ".")
-									   (set-color-by-piece renderer (aref render-grid i j))
-									   (fill-rect renderer (+ (* j sq-size) 1) (+ (* (- i (- piece-dim 1)) sq-size) 1) sq-size sq-size))))))
+    (loop for i from 0 below (array-dimension next-piece 0) do 
+      (loop for j from 0 below (array-dimension next-piece 1) do
+	(when (string/= (aref next-piece i j) ".")
+	  (set-color-by-piece renderer (aref next-piece i j))
+	  (fill-rect renderer
+		     (+ bxf 1 (* j sq-size))
+		     (+ (* i sq-size) 1)
+		     sq-size sq-size))))
+    (loop for i from (- piece-dim 1) below (array-dimension grid 0) do
+      (loop for j from 0 below (array-dimension grid 1) do
+	(when (string/= (aref render-grid i j) ".")
+	  (set-color-by-piece renderer (aref render-grid i j))
+	  (fill-rect renderer
+		     (+ (* j sq-size) 1)
+		     (+ (* (- i (- piece-dim 1)) sq-size) 1)
+		     sq-size sq-size))))))
 
+(defun set-color (tex r g b)
+  (sdl2:set-texture-color-mod (tex-texture tex) r g b))
+
+(defun render (tex x y &key clip angle center (flip :none))
+  (with-slots (renderer texture width height) tex
+    (sdl2:render-copy-ex renderer
+                         texture
+                         :source-rect clip
+                         :dest-rect (sdl2:make-rect x
+                                                    y
+                                                    (if clip (sdl2:rect-width clip) width)
+                                                    (if clip (sdl2:rect-height clip) height))
+                         :angle angle
+                         :center center
+                         :flip (list flip))))
 
 (defun run ()
   (setf *random-state* (make-random-state t))
@@ -366,13 +428,15 @@
 			(check-loss)
 			(setq end (get-internal-real-time))
 			(setf next-piece (predict-piece))
-			(sleep (- 0.2 (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
+			(sleep (- sleep-time (/ (- end start) 1000000)))))) ;; Substract time spent on calculations
 		  :name "thread")
 
   (with-window-renderer
       (window renderer)
     (sdl2-image:init '(:png))
-    (let ()
+    (sdl2-ttf:init)
+    (setf *font* (sdl2-ttf:open-font "./square.ttf" 28))
+    (let ((l-tex (load-texture-from-text renderer "0")))
       (sdl2:with-event-loop
 	  (:method :poll)
 	(:quit () t)
@@ -389,10 +453,15 @@
 		 (sdl2:push-quit-event))
 	       (sdl2:set-render-draw-color renderer 0 0 0 255)
 	       (sdl2:render-clear renderer)
+	       (setf l-tex (load-texture-from-text renderer (write-to-string *score*)))
+	       (set-color l-tex 255 255 255)
+	       (render l-tex (* sq-size (+ *grid-width* (ceiling piece-dim 2))) (* (1+ piece-dim) sq-size))
 	       (sdl2:set-render-draw-color renderer 255 255 255 0)
 	       (render-game-grid renderer)
-	       (sdl2:render-present renderer))))
-    (sdl2-image:quit)))
+	       (sdl2:render-present renderer)))
+	  (free-tex l-tex))
+      (sdl2-ttf:quit)
+      (sdl2-image:quit)))
 
 ;;(sb-ext:save-lisp-and-die #p"tetris" :toplevel #'run :executable t :compression 9)
 (run)
