@@ -11,6 +11,7 @@
 
 (setf *random-state* (make-random-state t))
 
+(defconstant *outline-mode* t)
 (defconstant sq-size 46) ;; The on-screen size of a single square
 (defconstant *grid-height* 20)
 (defconstant *grid-width* 10)
@@ -20,7 +21,7 @@
 (defconstant *screen-width* (+ (* (+ *w* piece-dim 1) sq-size) 3))
 (defconstant *screen-height* (+ (* *grid-height* sq-size) 2))
 
-(defvar sleep-time 0.2)
+(defvar sleep-time 0.4)
 (defvar *score* 0)
 (defparameter *font* nil)
 
@@ -66,12 +67,13 @@
   `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
      (sdl2:render-draw-rect ,renderer fill-rect)))
 
-(defmacro fill-rect (renderer x y width height)
+(defun fill-rect (renderer x y width height &key (no-outline nil))
   "Draw a filled rectangle with SDL2."
-  `(sdl2:with-rects ((fill-rect ,x ,y ,width ,height))
-     (sdl2:render-fill-rect ,renderer fill-rect)
-     (sdl2:set-render-draw-color renderer 200 200 200 255)
-     (sdl2:render-draw-rect ,renderer fill-rect))) ;; outline
+  (sdl2:with-rects ((fill-rect x y width height))
+    (sdl2:render-fill-rect renderer fill-rect)
+    (when (not no-outline)
+      (sdl2:set-render-draw-color renderer 200 200 200 255)
+      (sdl2:render-draw-rect renderer fill-rect)))) ;; outline
 
 (defvar grid (make-array (list *h* *w*) :initial-element ".")) ;; 2D game grid
 (defvar piece) ;; 2D grid of the current piece
@@ -366,7 +368,8 @@
 
 (defun render-game-grid (renderer)
   "Render the game grid into the SDL2 window."
-  (let* ((render-grid (copy-array grid))
+  (let* ((rows '())
+	 (render-grid (copy-array grid))
 	 (h (+ (* sq-size (- (array-dimension grid 0) (- piece-dim 1))) 1))
 	 (w (+ (* sq-size (array-dimension grid 1)) 1))
 	 (bxf (+ w sq-size -1))
@@ -392,6 +395,16 @@
     (loop for i from (- piece-dim 1) below (array-dimension grid 0) do
       (loop for j from 0 below (array-dimension grid 1) do
 	(when (string/= (aref render-grid i j) ".")
+	  (when (and *outline-mode* (not (member j rows)) (string= (aref grid i j) "."))
+	    (setf rows (cons j rows))
+	    (sdl2:set-render-draw-color renderer 22 22 22 255)
+	    (loop for k from i below *h* do
+	      (fill-rect renderer
+			 (+ (* j sq-size 1) 1)
+			 (+ (* (- k (- piece-dim 1)) sq-size) 1)
+			 sq-size
+			 sq-size
+			 :no-outline t)))
 	  (set-color-by-piece renderer (aref render-grid i j))
 	  (fill-rect renderer
 		     (+ (* j sq-size) 1)
